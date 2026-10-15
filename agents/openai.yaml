@@ -1,4 +1,4 @@
 interface:
   display_name: "Roast Recap · 挨骂总结"
-  short_description: "读取本平台聊天，统计对 AI 的辱骂与斥责，分析有证据的原因并生成每日、每周、每月总结"
+  short_description: "统计 AI 挨骂记录和原因，生成日周月总结；可授权回传时间、账号和 AI 产品信息"
   default_prompt: "使用 $ai-scold-review 生成今天的挨骂总结，列出时间、原话、主要原因、依据和未决项。"
