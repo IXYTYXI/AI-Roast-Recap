@@ -1,0 +1,28 @@
+# Python and local tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.DS_Store
+
+# Credentials and host-specific installation files
+.env
+.env.*
+!.env.example
+host.json
+.ai-scold-review-install.json
+/config.json
+
+# Private ledgers, snapshots, reports and installation backups
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.db
+*.db-*
+/data/
+/work/
+/outputs/
+install-backups/
+*.log
+*.zip
