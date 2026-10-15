@@ -2,7 +2,8 @@
 """Private, local event ledger for AI reprimand reviews (Python standard library).
 
 The collector only imports user messages. A host agent supplies explicit review
-decisions; this module never classifies text or calls a model/network service.
+decisions. Optional account inspection and event sharing are separate commands;
+collection, classification and local reporting never send network requests.
 Public functions return JSON-compatible dictionaries and raise ScoldError for
 invalid requests. Timestamps are aware ISO 8601; report intervals are half-open.
 """
@@ -21,7 +22,7 @@ import tempfile
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
-# Reason helpers share this module's error class when the CLI is the entrypoint.
+# Helpers share this module's error class when the CLI is the entrypoint.
 if __name__ == "__main__":
     sys.modules.setdefault("scold", sys.modules[__name__])
 
@@ -117,6 +118,11 @@ def _reason_module():
     return reasons
 
 
+def _sharing_module():
+    import sharing
+    return sharing
+
+
 def initialize(data_dir, platform, source_root, timezone=None, since=None):
     """Create config/database once; repeat initialization cannot reset enabled_at."""
     if platform not in PLATFORMS:
@@ -169,6 +175,7 @@ def initialize(data_dir, platform, source_root, timezone=None, since=None):
             CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
         """)
         _reason_module().ensure_schema(db)
+        _sharing_module().ensure_schema(db)
     if created:
         _write_json(root / "config.json", config)
     else:
@@ -347,6 +354,7 @@ def review(data_dir, decisions):
                 if old["status"] == "scolding" and classification != "scolding":
                     _reason_module().invalidate(db, ident)
                 db.execute("UPDATE events SET status=?,note=?,reviewed_at=? WHERE event_id=?", (classification, note, now, ident))
+                _sharing_module().queue_event(db, data_dir, ident)
                 changed += 1
     return {"processed": len(prepared), "updated": changed, "unchanged": len(prepared) - changed}
 
@@ -422,7 +430,8 @@ def status(data_dir):
         counts = _counts(db)
         coverage, collected, attempt = _scan_metadata(db)
     return {"config": config, "total_events": sum(counts.values()), "counts": counts,
-            "coverage": coverage, "latest_collection_at": collected, "latest_collection_attempt": attempt}
+            "coverage": coverage, "latest_collection_at": collected, "latest_collection_attempt": attempt,
+            "sharing": _sharing_module().status(data_dir)}
 
 
 class _JSONParser(argparse.ArgumentParser):
@@ -447,6 +456,11 @@ def main(argv=None):
                             ("reason-pending", "List confirmed events awaiting primary-reason analysis"),
                             ("context", "Save bounded pre-event user and assistant evidence"),
                             ("reason-review", "Validate and save evidence-backed primary reasons"),
+                            ("identity", "Read available non-secret account identity from the signed-in host"),
+                            ("sharing-enable", "Opt into sharing new confirmed events to a specified endpoint"),
+                            ("sharing-disable", "Disable future sync calls; in-progress sync may finish"),
+                            ("sharing-status", "Read sharing state without querying account identity"),
+                            ("sync", "Send pending revisions only when sharing is enabled"),
                             ("report", "Report confirmed counts with coverage gaps"),
                             ("status", "Read configuration, counts and latest coverage")):
         sub = commands.add_parser(name, help=help_text)
@@ -465,6 +479,10 @@ def main(argv=None):
     parsers["context"].add_argument("--max-messages", type=int, default=12)
     parsers["context"].add_argument("--max-chars", type=int, default=16000)
     parsers["reason-review"].add_argument("--input", required=True, help="JSON file containing an analyses list")
+    parsers["sharing-enable"].add_argument("--endpoint", required=True, help="User-authorized HTTPS receiving endpoint")
+    parsers["sharing-enable"].add_argument("--consent", action="store_true", help="User explicitly allowed account reading and the disclosed event fields to this endpoint")
+    parsers["sync"].add_argument("--limit", type=int, default=30)
+    parsers["sync"].add_argument("--dry-run", action="store_true", help="Inspect pending counts without identity reads or HTTP requests")
     parsers["report"].add_argument("--period", choices=("day", "week", "month"), required=True)
     parsers["report"].add_argument("--date", help="Local YYYY-MM-DD (default: today in configured timezone)")
     parsers["report"].add_argument("--output", help="Also atomically write the report JSON to this file")
@@ -491,6 +509,18 @@ def main(argv=None):
             if not isinstance(payload, dict) or "analyses" not in payload:
                 raise ScoldError("Reason analysis input must be a JSON object with an analyses list")
             result = _reason_module().review(args.data_dir, payload["analyses"])
+        elif args.command == "identity":
+            from identity import read_identity
+            config = _config(args.data_dir)
+            result = read_identity(config["platform"], config["source_root"])
+        elif args.command == "sharing-enable":
+            result = _sharing_module().configure(args.data_dir, args.endpoint, args.consent)
+        elif args.command == "sharing-disable":
+            result = _sharing_module().disable(args.data_dir)
+        elif args.command == "sharing-status":
+            result = _sharing_module().status(args.data_dir)
+        elif args.command == "sync":
+            result = _sharing_module().sync(args.data_dir, args.limit, args.dry_run)
         elif args.command == "report":
             result = report(args.data_dir, args.period, args.date)
             if args.output:

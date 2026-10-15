@@ -13,6 +13,7 @@ venv/
 host.json
 .ai-scold-review-install.json
 /config.json
+sharing.json
 
 # Private ledgers, snapshots, reports and installation backups
 *.sqlite

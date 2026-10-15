@@ -48,7 +48,8 @@ def install_one(platform, root, timezone_name=None, dry_run=False, data_dir=None
     if dry_run:
         return result
     required = ['SKILL.md', 'scripts/scold.py', 'scripts/sources.py',
-                'scripts/context.py', 'scripts/reasons.py']
+                'scripts/context.py', 'scripts/reasons.py',
+                'scripts/identity.py', 'scripts/sharing.py']
     if any(not (PACKAGE / item).is_file() for item in required):
         raise ValueError('package is incomplete')
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -64,7 +65,7 @@ def install_one(platform, root, timezone_name=None, dry_run=False, data_dir=None
                                 ignore=shutil.ignore_patterns('__pycache__', '*.pyc'))
         host = {'platform': platform, 'data_dir': str(data), 'source_root': str(root)}
         (stage / 'host.json').write_text(json.dumps(host, ensure_ascii=False, indent=2) + '\n')
-        (stage / MARKER).write_text(json.dumps({'package': NAME, 'version': '0.2.1'}) + '\n')
+        (stage / MARKER).write_text(json.dumps({'package': NAME, 'version': '0.3.0'}) + '\n')
         command = [sys.executable, str(stage / 'scripts/scold.py'), 'init',
                    '--data-dir', str(data), '--platform', platform,
                    '--source-root', str(root)]
